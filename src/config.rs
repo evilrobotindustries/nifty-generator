@@ -16,7 +16,8 @@ pub(crate) fn load(args: &Arguments) -> Result<Config> {
         .read(true)
         .open(&config)
         .with_context(|| format!("failed to load configuration from {config_path}"))?;
-    let mut config: Config = serde_json::from_reader(file)?;
+    let mut config: Config = serde_json::from_reader(file)
+        .with_context(|| format!("failed to deserialize configuration file from {config_path}"))?;
 
     // Reverse the attributes (layers)
     config.attributes.reverse();
