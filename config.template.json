@@ -1,0 +1,35 @@
+{
+  "name": "Project Name",
+  "description": "A description of the project.",
+  "token_name": "Token #{id}",
+  "background_color": "000000",
+  "attributes": [
+    {
+      "name": "Audio",
+      "directory": "audio samples",
+      "options": {
+        "Sound 1": "sound 1.m4a",
+        "Sound 2": "sound_2.wav"
+      }
+    },
+    {
+      "name": "Layer 1",
+      "directory": "1",
+      "options": {
+        "Logo": "test.png"
+      }
+    },
+    {
+      "name": "Background",
+      "directory": "0",
+      "options": {
+        "Red": "red.png",
+        "Orange": "orange.jpg",
+        "Yellow": "orange.webp",
+        "Green": "green.bmp",
+        "Blue": "blue.gif"
+      }
+    }
+  ]
+}
+
