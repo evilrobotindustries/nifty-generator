@@ -1,6 +1,7 @@
 {
   "name": "Project Name",
   "description": "A description of the project.",
+  "supply": 10000,
   "token_name": "Token #{id}",
   "background_color": "000000",
   "attributes": [

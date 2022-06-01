@@ -1,8 +1,17 @@
 use crate::config::{Attribute, Config};
+use log::{debug, trace};
 use std::path::PathBuf;
 
 pub(crate) fn combinations(config: &Config) -> Vec<Vec<(&Attribute, &str, &Option<PathBuf>)>> {
-    generate(&config.attributes, 0)
+    let attributes = config.attributes.len();
+    let total_options: usize = config.attributes.iter().map(|a| a.options.len()).sum();
+    trace!("generating combinations from {attributes} available attributes and a total of {total_options} attribute options");
+    let combinations = generate(&config.attributes, 0);
+    debug!(
+        "generated {} combinations from {attributes} available attributes and a total of {total_options} attribute options",
+        combinations.len(),
+    );
+    combinations
 }
 
 fn generate(

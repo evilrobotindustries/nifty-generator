@@ -8,6 +8,7 @@ mod config;
 mod generation;
 mod metadata;
 mod output;
+mod random;
 
 const PATH_TO_STRING_MSG: &str = "could not convert path to string";
 

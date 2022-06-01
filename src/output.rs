@@ -1,6 +1,7 @@
 use crate::{Arguments, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
-use log::{debug, trace};
+use log::{debug, trace, warn};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn init(args: &Arguments) -> Result<PathBuf> {
@@ -46,10 +47,17 @@ fn init_output(args: &Arguments) -> Result<PathBuf> {
     let output = args.source.join(&args.output);
     let output_path = &output.to_str().expect(PATH_TO_STRING_MSG);
     trace!("checking output directory '{output_path}' exists...");
-    if !Path::new(&output).is_dir() {
-        trace!("output directory does not exist, creating...");
-        std::fs::create_dir(&output)
+
+    if Path::new(&output).is_dir() {
+        // Clear output as config may have changed
+        warn!("output directory '{output_path}' already exists and needs to be cleared: press enter when ready to continue...");
+        let mut buffer: Vec<u8> = vec![];
+        std::io::stdin().read(&mut *buffer)?;
+        std::fs::remove_dir_all(&output)
             .with_context(|| format!("could not create output directory {output_path}"))?;
     }
+
+    std::fs::create_dir(&output)
+        .with_context(|| format!("could not create output directory {output_path}"))?;
     Ok(output)
 }

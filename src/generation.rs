@@ -9,6 +9,7 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::rc::Rc;
 use std::time::Instant;
+use thousands::Separable;
 
 const ID: &str = "id";
 
@@ -22,8 +23,17 @@ pub(crate) fn generate(args: Arguments, config: &Config) -> Result<()> {
     let mut images = HashMap::new();
     let mut token_variables = HashMap::new();
 
-    // Generate all combinations and then build token images and metadata
-    for (token, attributes) in combinations::combinations(&config).iter().enumerate() {
+    // Generate all combinations, select a random subset and then build token images and metadata
+    let combinations = combinations::combinations(&config);
+    let combinations_count = combinations.len();
+    let combinations = crate::random::random(combinations, config.supply);
+    info!(
+        "randomly selected {} items from {} combinations",
+        combinations.len().separate_with_commas(),
+        combinations_count.separate_with_commas()
+    );
+
+    for (token, attributes) in combinations.iter().enumerate() {
         let token = token + 1;
         info!("generating nifty #{}", token);
 

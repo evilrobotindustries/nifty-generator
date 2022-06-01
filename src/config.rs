@@ -1,6 +1,6 @@
 use crate::{Arguments, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
-use log::{debug, info, trace};
+use log::{debug, trace};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -30,6 +30,7 @@ pub(crate) fn load(args: &Arguments) -> Result<Config> {
 pub struct Config {
     pub name: String,
     pub description: String,
+    pub supply: u32,
     pub token_name: String,
     pub background_color: Option<String>,
     pub attributes: Vec<Attribute>,
