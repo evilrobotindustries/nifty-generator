@@ -95,11 +95,16 @@ pub(crate) fn generate(args: Arguments, config: &Config) -> Result<()> {
                     "unable to name token {token} using the configured token name format"
                 })?,
                 description: &config.description,
-                image: media
-                    .join(&image_name)
-                    .to_str()
-                    .expect(PATH_TO_STRING_MSG)
-                    .to_string(),
+                image: Path::new(
+                    &media
+                        .components()
+                        .last()
+                        .expect("could not get last component from path"),
+                )
+                .join(&image_name)
+                .to_str()
+                .expect(PATH_TO_STRING_MSG)
+                .to_string(),
                 external_url: None,
                 attributes: token_attributes,
                 background_color: config.background_color.as_deref(),
