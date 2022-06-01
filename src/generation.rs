@@ -3,7 +3,7 @@ use crate::{combinations, Arguments, Config, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
 use hhmmss::Hhmmss;
 use image::{imageops, DynamicImage};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::Path;
@@ -44,7 +44,7 @@ pub(crate) fn generate(args: Arguments, config: &Config) -> Result<()> {
         let mut token_attributes = Vec::<Attribute>::with_capacity(attributes.len());
 
         // Process layers
-        for (layer, (attribute, value, file)) in attributes.iter().enumerate() {
+        for (layer, (attribute, value, media_type)) in attributes.iter().enumerate() {
             let directory = attribute.directory.to_str().expect(PATH_TO_STRING_MSG);
             debug!(
                 "processing attribute '{}' with value of '{value}' from directory '{directory}' as layer {layer}",
@@ -57,15 +57,26 @@ pub(crate) fn generate(args: Arguments, config: &Config) -> Result<()> {
                 value,
             });
 
-            // Continue when no trait
-            if file.is_none() {
+            // Continue when no value
+            if media_type.is_none() {
+                continue;
+            }
+
+            // Continue when no value
+            if matches!(media_type, Some(crate::config::MediaType::Audio { .. })) {
+                warn!("audio types are currently a work in progress");
                 continue;
             }
 
             // Get image and cache for subsequent use
             let path = source
                 .join(&directory)
-                .join(file.as_ref().expect("could not get expected file"))
+                .join(
+                    media_type
+                        .as_ref()
+                        .expect("could not get expected file")
+                        .file(),
+                )
                 .into_os_string()
                 .into_string()
                 .expect(PATH_TO_STRING_MSG);

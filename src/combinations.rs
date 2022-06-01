@@ -1,8 +1,7 @@
-use crate::config::{Attribute, Config};
+use crate::config::{Attribute, Config, MediaType};
 use log::{debug, trace};
-use std::path::PathBuf;
 
-pub(crate) fn combinations(config: &Config) -> Vec<Vec<(&Attribute, &str, &Option<PathBuf>)>> {
+pub(crate) fn combinations(config: &Config) -> Vec<Vec<(&Attribute, &str, &Option<MediaType>)>> {
     let attributes = config.attributes.len();
     let total_options: usize = config.attributes.iter().map(|a| a.options.len()).sum();
     trace!("generating combinations from {attributes} available attributes and a total of {total_options} attribute options");
@@ -17,8 +16,8 @@ pub(crate) fn combinations(config: &Config) -> Vec<Vec<(&Attribute, &str, &Optio
 fn generate(
     attributes: &Vec<Attribute>,
     i: usize,
-) -> Vec<Vec<(&Attribute, &str, &Option<PathBuf>)>> {
-    let mut results = Vec::<Vec<(&Attribute, &str, &Option<PathBuf>)>>::new();
+) -> Vec<Vec<(&Attribute, &str, &Option<MediaType>)>> {
+    let mut results = Vec::<Vec<(&Attribute, &str, &Option<MediaType>)>>::new();
     let attribute = &attributes[i];
     for (name, path) in &attribute.options {
         if i < attributes.len() - 1 {

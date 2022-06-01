@@ -1,12 +1,19 @@
 use crate::{Arguments, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
 use log::{debug, trace};
-use serde::Deserialize;
+use serde::de::Visitor;
+use serde::{de, Deserialize, Deserializer};
 use std::collections::HashMap;
+use std::fmt::Formatter;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+
+const SUPPORTED_AUDIO_EXTENSIONS: [&str; 5] = ["aac", "flac", "m4a", "mp3", "wav"];
+const SUPPORTED_IMAGE_EXTENSIONS: [&str; 11] = [
+    "bmp", "dds", "jpg", "jpeg", "hdr", "ico", "png", "pnm", "tiff", "tga", "webp",
+];
 
 pub(crate) fn load(args: &Arguments) -> Result<Config> {
     let config = args.source.join(&args.config);
@@ -47,10 +54,10 @@ impl Config {
             let directory = Self::validate_directory(path, &attribute)?;
 
             // Check if configured files exist
-            for file in attribute.options.values() {
-                if let Some(file) = file {
+            for value in attribute.options.values() {
+                if let Some(value) = value {
                     // Check if file exists
-                    Self::validate_file(&directory, &file)?;
+                    Self::validate_file(&directory, &value.file())?;
                 }
             }
         }
@@ -89,5 +96,55 @@ impl Config {
 pub struct Attribute {
     pub name: String,
     pub directory: PathBuf,
-    pub options: HashMap<String, Option<PathBuf>>,
+    pub options: HashMap<String, Option<MediaType>>,
+}
+
+#[derive(Debug)]
+pub enum MediaType {
+    Image(PathBuf),
+    Audio(PathBuf),
+}
+
+impl MediaType {
+    pub(crate) fn file(&self) -> &PathBuf {
+        match self {
+            MediaType::Image(file) => file,
+            MediaType::Audio(file) => file,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MediaType {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct MediaTypeVisitor;
+
+        impl<'de> Visitor<'de> for MediaTypeVisitor {
+            type Value = MediaType;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("string")
+            }
+
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                let path = PathBuf::from(s);
+                let extension = path.extension().map(|e| e.to_ascii_lowercase());
+                return match extension.as_ref().and_then(|e| e.to_str()) {
+                    Some(extension) => {
+                        if SUPPORTED_AUDIO_EXTENSIONS.contains(&extension) {
+                            Ok(MediaType::Audio(path))
+                        } else if SUPPORTED_IMAGE_EXTENSIONS.contains(&extension) {
+                            Ok(MediaType::Image(path))
+                        } else {
+                            Err(de::Error::custom(format!(
+                                "file extension {extension} not supported"
+                            )))
+                        }
+                    }
+                    None => Err(de::Error::custom("no file extension")),
+                };
+            }
+        }
+
+        deserializer.deserialize_str(MediaTypeVisitor)
+    }
 }

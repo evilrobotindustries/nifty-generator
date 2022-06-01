@@ -1,14 +1,13 @@
-use crate::config::Attribute;
+use crate::config::{Attribute, MediaType};
 use log::debug;
 use rand::seq::SliceRandom;
 use std::cmp;
-use std::path::PathBuf;
 use thousands::Separable;
 
 pub(crate) fn random<'a>(
-    items: Vec<Vec<(&'a Attribute, &'a str, &'a Option<PathBuf>)>>,
+    items: Vec<Vec<(&'a Attribute, &'a str, &'a Option<MediaType>)>>,
     amount: u32,
-) -> Vec<Vec<(&'a Attribute, &'a str, &'a Option<PathBuf>)>> {
+) -> Vec<Vec<(&'a Attribute, &'a str, &'a Option<MediaType>)>> {
     let amount = cmp::min(amount as usize, items.len());
     debug!(
         "randomly selecting {} from {} items",
