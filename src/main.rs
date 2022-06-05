@@ -12,7 +12,8 @@ mod random;
 
 const PATH_TO_STRING_MSG: &str = "could not convert path to string";
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Initialise command line arguments and logging
     let args: Arguments = Arguments::from_args();
     loggerv::init_with_verbosity(args.verbosity).with_context(|| {
@@ -29,7 +30,7 @@ fn main() -> Result<()> {
     output::init(&args)?;
 
     // Generate tokens
-    generation::generate(args, &config)
+    generation::generate(args, config).await
 }
 
 /// Do fancy things
