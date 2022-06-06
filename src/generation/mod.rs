@@ -1,5 +1,7 @@
+mod caches;
+
 use self::caches::Cache;
-use crate::config::MediaType;
+use crate::config::{Color, MediaType};
 use crate::metadata::{Attribute, Metadata};
 use crate::{combinations, Arguments, Config, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
@@ -7,6 +9,7 @@ use ffmpeg_cli::{FfmpegBuilder, Parameter};
 use hhmmss::Hhmmss;
 use image::{imageops, DynamicImage};
 use log::{debug, error, info, trace};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -57,6 +60,7 @@ impl Generator {
 
         let mut audio_cache = caches::AudioCache::new();
         let mut image_cache = caches::ImageCache::new();
+        let mut background_color_cache = caches::ColorCache::new();
 
         for (token, attributes) in randomised.iter().enumerate() {
             let token = token + 1;
@@ -66,6 +70,7 @@ impl Generator {
             let mut token_image: Option<Rc<DynamicImage>> = None;
             let mut token_attributes = Vec::<Attribute>::with_capacity(attributes.len());
             let mut audio: Option<(PathBuf, MediaType)> = None;
+            let mut token_color: Option<&Color> = None;
 
             // Process layers
             for (layer, (attribute, value, media_type)) in attributes.iter().enumerate() {
@@ -74,15 +79,14 @@ impl Generator {
                 "processing attribute '{}' with value of '{value}' from directory '{directory}' as layer {layer}",
                 attribute.name
             );
-
                 // Add attribute
                 token_attributes.push(Attribute::String {
                     trait_type: &attribute.name,
                     value,
                 });
 
-                // Continue when no value
                 match media_type {
+                    // Continue when no value
                     None => continue,
                     Some(media_type) => {
                         match media_type {
@@ -93,6 +97,12 @@ impl Generator {
                                     MediaType::Audio(file.clone()),
                                 ));
                                 continue;
+                            }
+                            MediaType::Color(color) => {
+                                // Store color for later use (i.e. first image layer to determine width/height)
+                                if token_color.is_none() {
+                                    token_color = Some(color);
+                                }
                             }
                             MediaType::Image(file, ..) => {
                                 // Get image and cache for subsequent use
@@ -107,8 +117,21 @@ impl Generator {
 
                                 // Set token image if first layer
                                 if token_image.is_none() {
-                                    token_image = Some(Rc::new(layer_image.clone()));
-                                    continue;
+                                    // Check if we should apply a background color as first layer
+                                    if let Some(color) = token_color {
+                                        token_image = Some(Rc::new(
+                                            background_color_cache
+                                                .get_color(
+                                                    color,
+                                                    layer_image.width(),
+                                                    layer_image.height(),
+                                                )?
+                                                .clone(),
+                                        ));
+                                    } else {
+                                        token_image = Some(Rc::new(layer_image.clone()));
+                                        continue;
+                                    }
                                 }
 
                                 // Add layer to image
@@ -141,7 +164,12 @@ impl Generator {
                 };
 
                 // Finally save metadata
-                self.save_metadata(token, token_attributes, image_path, video_path)
+                let token_color = token_color.map(|color| color.hex.as_str()).or(self
+                    .config
+                    .background_color
+                    .as_ref()
+                    .map(|color| color.hex.as_str()));
+                self.save_metadata(token, token_attributes, token_color, image_path, video_path)
                     .with_context(|| "unable to save token metadata")?;
             }
         }
@@ -156,7 +184,7 @@ impl Generator {
         audio: (PathBuf, MediaType),
         cache: &mut caches::AudioCache,
     ) -> Result<PathBuf> {
-        let audio_file = audio.1.file();
+        let audio_file = audio.1.file().expect("expected an audio file path");
         let audio_path = self
             .source
             .join(audio.0)
@@ -250,6 +278,7 @@ impl Generator {
         &self,
         token: usize,
         attributes: Vec<Attribute>,
+        background_color: Option<&str>,
         image_path: PathBuf,
         video_path: Option<PathBuf>,
     ) -> Result<()> {
@@ -291,7 +320,7 @@ impl Generator {
                 )
             }),
             attributes,
-            background_color: self.config.background_color.as_deref(), // todo: color from layer
+            background_color: background_color.map(|color| color.replace("#", "")),
             animation_url,
             youtube_url: None,
         };
@@ -314,63 +343,5 @@ impl Generator {
         }
 
         Ok(())
-    }
-}
-
-mod caches {
-
-    use anyhow::{Context, Result};
-    use image::DynamicImage;
-    use log::trace;
-    use std::collections::HashMap;
-    use std::fs::File;
-    use std::io::BufReader;
-    use std::time::Duration;
-
-    pub(crate) trait Cache<T> {
-        fn get(&mut self, key: &str) -> Result<&T>;
-    }
-
-    pub(crate) struct ImageCache(HashMap<String, DynamicImage>);
-
-    impl ImageCache {
-        pub(crate) fn new() -> Self {
-            Self(HashMap::new())
-        }
-    }
-
-    impl Cache<DynamicImage> for ImageCache {
-        fn get(&mut self, key: &str) -> Result<&DynamicImage> {
-            if !self.0.contains_key(key) {
-                trace!("caching '{key}' for next use...");
-                let image = image::open(&key).with_context(|| format!("unable to open {key}"))?;
-                self.0.insert(key.to_string(), image);
-            }
-            Ok(self.0.get(key).expect("could not get cached image"))
-        }
-    }
-
-    pub(crate) struct AudioCache(HashMap<String, Duration>);
-
-    impl AudioCache {
-        pub(crate) fn new() -> Self {
-            Self(HashMap::new())
-        }
-    }
-
-    impl Cache<Duration> for AudioCache {
-        fn get(&mut self, key: &str) -> Result<&Duration> {
-            if !self.0.contains_key(key) {
-                let file = File::open(key.clone()).with_context(|| "error opening audio file")?;
-                let size = file
-                    .metadata()
-                    .with_context(|| format!("unable to retrieve metadata for '{key}'"))?
-                    .len();
-                let reader = BufReader::new(file);
-                let reader = mp4::Mp4Reader::read_header(reader, size)?;
-                self.0.insert(key.to_string(), reader.duration());
-            }
-            Ok(self.0.get(key).expect("could not get cached audio"))
-        }
     }
 }

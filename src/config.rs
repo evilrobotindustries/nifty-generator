@@ -1,6 +1,6 @@
 use crate::{Arguments, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
-use image::ImageFormat;
+use image::{ImageFormat, Rgba};
 use log::{debug, trace};
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer};
@@ -9,6 +9,7 @@ use std::fmt::Formatter;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::ErrorKind;
+use std::num::ParseIntError;
 use std::path::{Path, PathBuf};
 
 const SUPPORTED_AUDIO_EXTENSIONS: [&str; 5] = ["aac", "flac", "m4a", "mp3", "wav"];
@@ -39,7 +40,7 @@ pub struct Config {
     pub supply: u32,
     pub token_name: String,
     pub external_url: Option<String>,
-    pub background_color: Option<String>,
+    pub background_color: Option<Color>,
     pub attributes: Vec<Attribute>,
 }
 
@@ -55,8 +56,10 @@ impl Config {
             // Check if configured files exist
             for value in attribute.options.values() {
                 if let Some(value) = value {
-                    // Check if file exists
-                    Self::validate_file(&directory, &value.file())?;
+                    if let Some(file) = value.file().as_ref() {
+                        // Check if file exists
+                        Self::validate_file(&directory, file)?;
+                    }
                 }
             }
         }
@@ -100,15 +103,23 @@ pub struct Attribute {
 
 #[derive(Debug)]
 pub enum MediaType {
-    Image(PathBuf, ImageFormat),
     Audio(PathBuf),
+    Color(Color),
+    Image(PathBuf, ImageFormat),
+}
+
+#[derive(Debug)]
+pub struct Color {
+    pub(crate) hex: String,
+    pub(crate) rgba: Rgba<u8>,
 }
 
 impl MediaType {
-    pub(crate) fn file(&self) -> &PathBuf {
+    pub(crate) fn file(&self) -> Option<&PathBuf> {
         match self {
-            MediaType::Image(file, ..) => file,
-            MediaType::Audio(file) => file,
+            MediaType::Audio(file) => Some(file),
+            MediaType::Color(..) => None,
+            MediaType::Image(file, ..) => Some(file),
         }
     }
 }
@@ -125,6 +136,20 @@ impl<'de> Deserialize<'de> for MediaType {
             }
 
             fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                // Check if colour
+                if s.starts_with("#") {
+                    return match parse_color(s) {
+                        Ok(color) => Ok(MediaType::Color(Color {
+                            hex: s.to_string(),
+                            rgba: color,
+                        })),
+                        Err(e) => Err(de::Error::custom(format!(
+                            "unable to parse {s} as a hex color string: {}",
+                            e
+                        ))),
+                    };
+                }
+
                 let path = PathBuf::from(s);
                 let extension = path.extension().map(|e| e.to_ascii_lowercase());
                 return match extension.as_ref().and_then(|e| e.to_str()) {
@@ -147,4 +172,48 @@ impl<'de> Deserialize<'de> for MediaType {
 
         deserializer.deserialize_str(MediaTypeVisitor)
     }
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct ColorVisitor;
+
+        impl<'de> Visitor<'de> for ColorVisitor {
+            type Value = Color;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("string")
+            }
+
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                if !s.starts_with("#") {
+                    return Err(de::Error::custom(format!(
+                        "unable to parse {s} as a hex color string",
+                    )));
+                }
+
+                match parse_color(s) {
+                    Ok(color) => Ok(Color {
+                        hex: s.to_string(),
+                        rgba: color,
+                    }),
+                    Err(e) => Err(de::Error::custom(format!(
+                        "unable to parse {s} as a hex color string: {}",
+                        e
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(ColorVisitor)
+    }
+}
+
+fn parse_color(hex: &str) -> Result<Rgba<u8>, ParseIntError> {
+    Ok(Rgba([
+        u8::from_str_radix(&hex[1..3], 16)?,
+        u8::from_str_radix(&hex[3..5], 16)?,
+        u8::from_str_radix(&hex[5..7], 16)?,
+        u8::from_str_radix(if hex.len() == 9 { &hex[7..9] } else { "FF" }, 16)?,
+    ]))
 }
