@@ -9,7 +9,6 @@ use ffmpeg_cli::{FfmpegBuilder, Parameter};
 use hhmmss::Hhmmss;
 use image::{imageops, DynamicImage};
 use log::{debug, error, info, trace};
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -217,8 +216,7 @@ impl Generator {
             .expect(PATH_TO_STRING_MSG);
         let mut output = ffmpeg_cli::File::new(&output_path)
             .option(Parameter::KeyValue("acodec", "aac"))
-            .option(Parameter::KeyValue("vcodec", "libx264"))
-            .option(Parameter::KeyValue("pix_fmt", "yuv420p"));
+            .option(Parameter::KeyValue("vcodec", "libx265"));
         if audio_duration != "" {
             output = output.option(Parameter::KeyValue("t", &audio_duration));
         }
