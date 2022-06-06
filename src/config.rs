@@ -1,5 +1,6 @@
 use crate::{Arguments, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
+use image::ImageFormat;
 use log::{debug, trace};
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer};
@@ -11,9 +12,6 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 const SUPPORTED_AUDIO_EXTENSIONS: [&str; 5] = ["aac", "flac", "m4a", "mp3", "wav"];
-const SUPPORTED_IMAGE_EXTENSIONS: [&str; 11] = [
-    "bmp", "dds", "jpg", "jpeg", "hdr", "ico", "png", "pnm", "tiff", "tga", "webp",
-];
 
 pub(crate) fn load(args: &Arguments) -> Result<Config> {
     let config = args.source.join(&args.config);
@@ -40,6 +38,7 @@ pub struct Config {
     pub description: String,
     pub supply: u32,
     pub token_name: String,
+    pub external_url: Option<String>,
     pub background_color: Option<String>,
     pub attributes: Vec<Attribute>,
 }
@@ -101,14 +100,14 @@ pub struct Attribute {
 
 #[derive(Debug)]
 pub enum MediaType {
-    Image(PathBuf),
+    Image(PathBuf, ImageFormat),
     Audio(PathBuf),
 }
 
 impl MediaType {
     pub(crate) fn file(&self) -> &PathBuf {
         match self {
-            MediaType::Image(file) => file,
+            MediaType::Image(file, ..) => file,
             MediaType::Audio(file) => file,
         }
     }
@@ -132,8 +131,9 @@ impl<'de> Deserialize<'de> for MediaType {
                     Some(extension) => {
                         if SUPPORTED_AUDIO_EXTENSIONS.contains(&extension) {
                             Ok(MediaType::Audio(path))
-                        } else if SUPPORTED_IMAGE_EXTENSIONS.contains(&extension) {
-                            Ok(MediaType::Image(path))
+                        // Use supported extensions from underlying image library
+                        } else if let Some(format) = ImageFormat::from_extension(&extension) {
+                            Ok(MediaType::Image(path, format))
                         } else {
                             Err(de::Error::custom(format!(
                                 "file extension {extension} not supported"

@@ -1,9 +1,9 @@
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
-use std::os::unix::raw::time_t;
 
 #[derive(Serialize)]
 pub struct Metadata<'a> {
+    pub id: usize,
     // Name of the item.
     pub name: String,
     // A human readable description of the item. Markdown is supported.
@@ -48,7 +48,7 @@ pub enum Attribute<'a> {
     Date {
         trait_type: &'a str,
         // A unix timestamp (seconds)
-        value: time_t,
+        value: i64,
     },
     // An attribute without any specific type
     Value(&'static str, String),

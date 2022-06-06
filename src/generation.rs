@@ -94,7 +94,7 @@ impl Generator {
                                 ));
                                 continue;
                             }
-                            MediaType::Image(file) => {
+                            MediaType::Image(file, ..) => {
                                 // Get image and cache for subsequent use
                                 let path = self
                                     .source
@@ -249,41 +249,50 @@ impl Generator {
     fn save_metadata(
         &self,
         token: usize,
-        token_attributes: Vec<Attribute>,
+        attributes: Vec<Attribute>,
         image_path: PathBuf,
         video_path: Option<PathBuf>,
     ) -> Result<()> {
+        // Generate relative media paths
         let media = self
             .media
             .components()
             .last()
             .expect("could not get last component from path");
         let media_path = Path::new(&media);
+        let image_name = image_path
+            .file_name()
+            .expect("could not get image file name");
+        let image = media_path
+            .join(image_name)
+            .to_str()
+            .expect(PATH_TO_STRING_MSG)
+            .to_string();
+        let animation_url = video_path.map(|p| {
+            media_path
+                .join(p.file_name().expect("could not get video file name"))
+                .to_str()
+                .expect(PATH_TO_STRING_MSG)
+                .to_string()
+        });
+
+        // Create metadata
         let token_variables = HashMap::from([(ID.to_string(), token.to_string())]);
         let token_metadata = Metadata {
+            id: token,
             name: strfmt::strfmt(&self.config.token_name, &token_variables).with_context(|| {
                 "unable to name token {token} using the configured token name format"
             })?,
             description: &self.config.description,
-            image: media_path
-                .join(
-                    image_path
-                        .file_name()
-                        .expect("could not get image file name"),
+            image,
+            external_url: self.config.external_url.as_ref().map(|url| {
+                strfmt::strfmt(&url, &token_variables).expect(
+                    "unable to name token {token} using the configured token external url format",
                 )
-                .to_str()
-                .expect(PATH_TO_STRING_MSG)
-                .to_string(),
-            external_url: None,
-            attributes: token_attributes,
-            background_color: self.config.background_color.as_deref(),
-            animation_url: video_path.map(|p| {
-                media_path
-                    .join(p.file_name().expect("could not get video file name"))
-                    .to_str()
-                    .expect(PATH_TO_STRING_MSG)
-                    .to_string()
             }),
+            attributes,
+            background_color: self.config.background_color.as_deref(), // todo: color from layer
+            animation_url,
             youtube_url: None,
         };
 
