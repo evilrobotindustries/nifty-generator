@@ -216,7 +216,8 @@ impl Generator {
             .expect(PATH_TO_STRING_MSG);
         let mut output = ffmpeg_cli::File::new(&output_path)
             .option(Parameter::KeyValue("acodec", "aac"))
-            .option(Parameter::KeyValue("vcodec", "libx265"));
+            .option(Parameter::KeyValue("vcodec", "libx264"))
+            .option(Parameter::KeyValue("pix_fmt", "yuv420p")); // Required for compatibility
         if audio_duration != "" {
             output = output.option(Parameter::KeyValue("t", &audio_duration));
         }
@@ -230,7 +231,11 @@ impl Generator {
             .stderr(Stdio::piped())
             .option(Parameter::Single("nostdin"))
             .option(Parameter::KeyValue("loop", "1"))
-            .input(ffmpeg_cli::File::new(&image_path))
+            .input(
+                ffmpeg_cli::File::new(&image_path)
+                    .option(Parameter::KeyValue("framerate", "1")) // Single image so only single frame
+                    .option(Parameter::KeyValue("colorspace", "bt709")), // Preserve colors as best as possible
+            )
             .input(ffmpeg_cli::File::new(&audio_path))
             .output(output);
 
