@@ -1,16 +1,18 @@
 mod caches;
 
 use self::caches::Cache;
-use crate::config::{Color, MediaType};
-use crate::metadata::{Attribute, Metadata};
-use crate::{combinations, Arguments, Config, PATH_TO_STRING_MSG};
+use crate::config::{AttributeOption, Color};
+use crate::{combinations, metadata, Arguments, Config, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
 use ffmpeg_cli::{FfmpegBuilder, Parameter};
 use hhmmss::Hhmmss;
 use image::{imageops, DynamicImage};
+use imageproc::drawing::{draw_text, text_size};
 use log::{debug, error, info, trace};
+use rusttype::{Font, Scale};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::rc::Rc;
@@ -67,82 +69,125 @@ impl Generator {
 
             // Create a new image
             let mut token_image: Option<Rc<DynamicImage>> = None;
-            let mut token_attributes = Vec::<Attribute>::with_capacity(attributes.len());
-            let mut audio: Option<(PathBuf, MediaType)> = None;
+            let mut token_attributes = Vec::<metadata::Attribute>::with_capacity(attributes.len());
+            let mut audio: Option<PathBuf> = None;
             let mut token_color: Option<&Color> = None;
 
             // Process layers
-            for (layer, (attribute, value, media_type)) in attributes.iter().enumerate() {
-                let directory = attribute.directory.to_str().expect(PATH_TO_STRING_MSG);
+            for (layer, (attribute, value, option)) in attributes.iter().enumerate() {
                 debug!(
-                "processing attribute '{}' with value of '{value}' from directory '{directory}' as layer {layer}",
-                attribute.name
-            );
+                    "processing attribute '{attribute}' with value of '{value}' as layer {layer}",
+                );
+
                 // Add attribute
-                token_attributes.push(Attribute::String {
-                    trait_type: &attribute.name,
+                token_attributes.push(metadata::Attribute::String {
+                    trait_type: attribute,
                     value,
                 });
 
-                match media_type {
-                    // Continue when no value
-                    None => continue,
-                    Some(media_type) => {
-                        match media_type {
-                            MediaType::Audio(file) => {
-                                // Save audio until the end of token generation
-                                audio = Some((
-                                    PathBuf::from(directory),
-                                    MediaType::Audio(file.clone()),
+                // Continue when no value
+                if let None = option {
+                    continue;
+                }
+
+                let option = option.as_ref().unwrap();
+                match option {
+                    AttributeOption::Audio { file, .. } => {
+                        // Save audio until the end of token generation
+                        audio = Some(file.clone());
+                        continue;
+                    }
+                    AttributeOption::Color { color, .. } => {
+                        // Store color for later use (i.e. first image layer to determine width/height)
+                        if token_color.is_none() {
+                            token_color = Some(color);
+                        }
+                    }
+                    AttributeOption::Image { file, .. } => {
+                        // Get image and cache for subsequent use
+                        let path = self
+                            .source
+                            .join(file)
+                            .into_os_string()
+                            .into_string()
+                            .expect(PATH_TO_STRING_MSG);
+                        let layer_image = image_cache.get(&path)?;
+
+                        // Set token image if first layer
+                        if token_image.is_none() {
+                            // Check if we should apply a background color as first layer
+                            if let Some(color) = token_color {
+                                token_image = Some(Rc::new(
+                                    background_color_cache
+                                        .get_color(
+                                            color,
+                                            layer_image.width(),
+                                            layer_image.height(),
+                                        )?
+                                        .clone(),
                                 ));
+                            } else {
+                                token_image = Some(Rc::new(layer_image.clone()));
                                 continue;
                             }
-                            MediaType::Color(color) => {
-                                // Store color for later use (i.e. first image layer to determine width/height)
-                                if token_color.is_none() {
-                                    token_color = Some(color);
-                                }
-                            }
-                            MediaType::Image(file, ..) => {
-                                // Get image and cache for subsequent use
-                                let path = self
-                                    .source
-                                    .join(&directory)
-                                    .join(file)
-                                    .into_os_string()
-                                    .into_string()
-                                    .expect(PATH_TO_STRING_MSG);
-                                let layer_image = image_cache.get(&path)?;
-
-                                // Set token image if first layer
-                                if token_image.is_none() {
-                                    // Check if we should apply a background color as first layer
-                                    if let Some(color) = token_color {
-                                        token_image = Some(Rc::new(
-                                            background_color_cache
-                                                .get_color(
-                                                    color,
-                                                    layer_image.width(),
-                                                    layer_image.height(),
-                                                )?
-                                                .clone(),
-                                        ));
-                                    } else {
-                                        token_image = Some(Rc::new(layer_image.clone()));
-                                        continue;
-                                    }
-                                }
-
-                                // Add layer to image
-                                let token_image = Rc::get_mut(
-                                    token_image
-                                        .as_mut()
-                                        .expect("expected an existing token image"),
-                                )
-                                .expect("expected an existing image");
-                                imageops::overlay(token_image, layer_image, 0, 0);
-                            }
                         }
+
+                        // Add layer to image
+                        let token_image = Rc::get_mut(
+                            token_image
+                                .as_mut()
+                                .expect("expected an existing token image"),
+                        )
+                        .expect("expected an existing image");
+                        imageops::overlay(token_image, layer_image, 0, 0);
+                    }
+                    AttributeOption::Text {
+                        font,
+                        text,
+                        height,
+                        x,
+                        y,
+                        color,
+                        ..
+                    } => {
+                        // Load font
+                        let path = self
+                            .source
+                            .join(font)
+                            .into_os_string()
+                            .into_string()
+                            .expect(PATH_TO_STRING_MSG);
+                        let file = std::fs::File::open(&path).expect("could not open font file");
+                        let mut reader = std::io::BufReader::new(file);
+                        let mut buffer = Vec::new();
+                        reader.read_to_end(&mut buffer)?;
+                        let font = Font::try_from_vec(buffer).unwrap();
+
+                        // Initialise text
+                        let token_variables = HashMap::from([(ID.to_string(), token.to_string())]);
+                        let text = strfmt::strfmt(&text, &token_variables).expect(
+                            "unable to name token {token} using the configured token external url format",
+                        );
+
+                        let image = token_image.expect(
+                            "an image is required before text can be written - check that the text layer is above some other image layer");
+
+                        let scale = Scale::uniform(*height);
+                        let text_size = text_size(scale, &font, &text);
+                        let x = if *x < 0 {
+                            (image.as_ref().width() as i32 + *x) - text_size.0
+                        } else {
+                            *x
+                        };
+                        token_image = Some(Rc::new(DynamicImage::ImageRgba8(draw_text(
+                            image.as_ref(),
+                            color.rgba,
+                            x,
+                            *y,
+                            scale,
+                            &font,
+                            &text,
+                        ))));
                     }
                 }
             }
@@ -155,7 +200,7 @@ impl Generator {
                 // Check if video to be generated
                 let video_path = if let Some(audio) = audio {
                     Some(
-                        self.generate_video(&image_path, audio, &mut audio_cache)
+                        self.generate_video(&image_path, &audio, &mut audio_cache)
                             .await?,
                     )
                 } else {
@@ -180,19 +225,17 @@ impl Generator {
     async fn generate_video(
         &self,
         image_path: &PathBuf,
-        audio: (PathBuf, MediaType),
+        audio: &PathBuf,
         cache: &mut caches::AudioCache,
     ) -> Result<PathBuf> {
-        let audio_file = audio.1.file().expect("expected an audio file path");
         let audio_path = self
             .source
-            .join(audio.0)
-            .join(audio_file)
+            .join(audio)
             .into_os_string()
             .into_string()
             .expect(PATH_TO_STRING_MSG);
         let mut audio_duration: Option<&Duration> = None;
-        if let Some(extension) = audio_file.extension().and_then(|e| e.to_str()) {
+        if let Some(extension) = audio.extension().and_then(|e| e.to_str()) {
             if extension == "m4a" {
                 trace!("determining audio track duration for precise output...");
                 // Read file to determine audio length
@@ -280,7 +323,7 @@ impl Generator {
     fn save_metadata(
         &self,
         token: usize,
-        attributes: Vec<Attribute>,
+        attributes: Vec<metadata::Attribute>,
         background_color: Option<&str>,
         image_path: PathBuf,
         video_path: Option<PathBuf>,
@@ -310,9 +353,9 @@ impl Generator {
 
         // Create metadata
         let token_variables = HashMap::from([(ID.to_string(), token.to_string())]);
-        let token_metadata = Metadata {
+        let token_metadata = metadata::Metadata {
             id: token,
-            name: strfmt::strfmt(&self.config.token_name, &token_variables).with_context(|| {
+            name: strfmt::strfmt(&self.config.name, &token_variables).with_context(|| {
                 "unable to name token {token} using the configured token name format"
             })?,
             description: &self.config.description,

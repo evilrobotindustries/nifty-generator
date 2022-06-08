@@ -3,19 +3,22 @@ name = "ng"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.release]
+strip = true  # Automatically strip symbols from the binary.
 
 [dependencies]
 anyhow = "1.0.57"
 hhmmss = "0.1.0"
 ffmpeg-cli = "0.1.0"
 futures = "0.3.21"
+indexmap = { version = "1.8.2", features = ["serde"] }
 image = "0.24.2"
 imageproc = "0.23.0"
 log = "0.4.17"
 loggerv = "0.7.2"
 mp4 = "0.11.0"
 rand = "0.8.5"
+rusttype = "0.9.2"
 serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0.81"
 strfmt = "0.1.6"
