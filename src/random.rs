@@ -91,6 +91,8 @@ pub(crate) fn generate(
         );
     }
 
+    // todo: include stats on duplicates
+
     Ok(results)
 }
 

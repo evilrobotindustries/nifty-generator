@@ -14,6 +14,7 @@ use std::num::ParseIntError;
 use std::path::{Path, PathBuf};
 
 const SUPPORTED_AUDIO_EXTENSIONS: [&str; 5] = ["aac", "flac", "m4a", "mp3", "wav"];
+const DEFAULT_WEIGHT: f64 = 1.0;
 
 pub(crate) fn load(args: &Arguments) -> Result<Config> {
     let config = args.source.join(&args.config);
@@ -182,6 +183,7 @@ impl<'de> Deserialize<'de> for AttributeOption {
                 let mut x = None;
                 let mut y = None;
                 let mut weight = None;
+
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "color" => {
@@ -249,8 +251,7 @@ impl<'de> Deserialize<'de> for AttributeOption {
                     let extension = file.extension().map(|e| e.to_ascii_lowercase());
                     return match extension.as_ref().and_then(|e| e.to_str()) {
                         Some(extension) => {
-                            let weight =
-                                weight.ok_or_else(|| de::Error::missing_field("weight"))?;
+                            let weight = weight.unwrap_or(DEFAULT_WEIGHT);
                             if SUPPORTED_AUDIO_EXTENSIONS.contains(&extension) {
                                 Ok(AttributeOption::Audio { file, weight })
                                 // Use supported extensions from underlying image library
@@ -270,7 +271,7 @@ impl<'de> Deserialize<'de> for AttributeOption {
                     let x = x.ok_or_else(|| de::Error::missing_field("x"))?;
                     let y = y.ok_or_else(|| de::Error::missing_field("y"))?;
                     let color = color.ok_or_else(|| de::Error::missing_field("color"))?;
-                    let weight = weight.ok_or_else(|| de::Error::missing_field("weight"))?;
+                    let weight = weight.unwrap_or(DEFAULT_WEIGHT);
                     return Ok(AttributeOption::Text {
                         font,
                         text,
@@ -281,7 +282,7 @@ impl<'de> Deserialize<'de> for AttributeOption {
                         weight,
                     });
                 } else if let Some(color) = color {
-                    let weight = weight.ok_or_else(|| de::Error::missing_field("weight"))?;
+                    let weight = weight.unwrap_or(DEFAULT_WEIGHT);
                     return Ok(AttributeOption::Color { color, weight });
                 } else if let Some(weight) = weight {
                     return Ok(AttributeOption::None { weight });

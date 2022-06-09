@@ -1,34 +1,86 @@
 {
-  "name": "Project Name",
+  "name": "Project Name #{id}",
   "description": "A description of the project.",
+  "background_color": "#000000",
+  "external_url": "https://projectsite.com/tokens/{id}",
   "supply": 10000,
-  "token_name": "Token #{id}",
-  "background_color": "000000",
+  "start_token": 1,
+  "_comment": "Attributes should be specified in layered order: i.e. layer 0 of the image as the bottom/last attribute.",
   "attributes": [
     {
+      "_comment": "Audio files (aac, flac, m4a, mp3, wav) are combined with images to create video. Lower weight increases rarity and when not specified, defaults to 1.",
       "name": "Audio",
-      "directory": "audio samples",
       "options": {
-        "Sound 1": "sound 1.m4a",
-        "Sound 2": "sound_2.wav"
+        "Sound 1": {
+          "file": "audio samples/sound 1.m4a",
+          "weight": 1
+        },
+        "Sound 2": {
+          "file": "audio samples/sound_2.wav",
+          "weight": 2
+        },
+        "None": {
+          "_comment": "A none/empty option can be added by specifying a weight value only.",
+          "weight": 3
+        }
       }
     },
     {
+      "_comment": "Text can be written to the image using the specified font, color, pixel height and co-ordinates. Attributes can be omitted from resulting metadata by setting 'metadata' to 'false'.",
+      "name": "Layer 2",
+      "metadata": false,
+      "options": {
+        "Token #": {
+          "font": "SomeFont.ttf",
+          "text": "{id}",
+          "height": 200,
+          "x": 500,
+          "y": 500,
+          "color": "#ffffff"
+        }
+      }
+    },
+    {
+      "_comment": "Images can be combined in layers to produce a final generated image.",
       "name": "Layer 1",
-      "directory": "1",
       "options": {
-        "Logo": "test.png"
+        "Logo": {
+          "file": "logo/image.png"
+        }
       }
     },
     {
-      "name": "Background",
-      "directory": "0",
+      "_comment": "A layer can simply specify a color (in rgba hex), which simply fills an image layer with the color.",
+      "name": "Layer 0",
       "options": {
-        "Red": "red.png",
-        "Orange": "orange.jpg",
-        "Yellow": "orange.webp",
-        "Green": "green.bmp",
-        "Blue": "blue.gif"
+        "Red": {
+          "color": "#ff0000",
+          "weight": 1
+        },
+        "Orange": {
+          "color": "#ffa500",
+          "weight": 5
+        },
+        "Yellow": {
+          "color": "#ffff00",
+          "weight": 2
+        },
+        "Green": {
+          "color": "#008000",
+          "weight": 3
+        },
+        "Blue": {
+          "color": "#0000ff",
+          "weight": 4
+        },
+        "Indigo": {
+          "color": "#4b0082",
+          "weight": 2
+        },
+        "Violet": {
+          "color": "#ee82ee",
+          "weight": 2
+        }
       }
     }
   ]
