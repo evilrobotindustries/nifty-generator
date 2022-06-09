@@ -7,6 +7,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer};
 use std::fmt::Formatter;
 use std::fs::OpenOptions;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::ErrorKind;
 use std::num::ParseIntError;
@@ -37,10 +38,11 @@ pub(crate) fn load(args: &Arguments) -> Result<Config> {
 pub(crate) struct Config {
     pub name: String,
     pub description: String,
-    pub supply: u32,
+    pub supply: usize,
+    pub start_token: usize,
     pub external_url: Option<String>,
     pub background_color: Option<Color>,
-    pub attributes: IndexMap<String, IndexMap<String, Option<AttributeOption>>>,
+    pub attributes: Vec<Attribute>,
 }
 
 impl Config {
@@ -48,21 +50,10 @@ impl Config {
         debug!("validating configuration...");
 
         // Check if configured paths exists
-        for attribute in self.attributes.values() {
-            for value in attribute.values() {
-                if let Some(value) = value {
-                    match value {
-                        AttributeOption::Audio { file, .. } => {
-                            Self::validate_path(&path.join(file))?
-                        }
-                        AttributeOption::Image { file, .. } => {
-                            Self::validate_path(&path.join(file))?
-                        }
-                        AttributeOption::Text { font, .. } => {
-                            Self::validate_path(&path.join(font))?
-                        }
-                        _ => {}
-                    }
+        for attribute in &self.attributes {
+            for value in attribute.options.values() {
+                if let Some(file) = value.path() {
+                    Self::validate_path(&path.join(file))?;
                 }
             }
         }
@@ -82,23 +73,52 @@ impl Config {
     }
 }
 
+#[derive(Deserialize)]
+pub(crate) struct Attribute {
+    /// The name of the attribute, as it should appear in the resulting token metadata.
+    pub(crate) name: String,
+    /// The possible values for the attribute.
+    pub(crate) options: IndexMap<String, AttributeOption>,
+    /// Whether the attribute should be included in the resulting token metadata.
+    #[serde(default = "metadata_default")]
+    pub(crate) metadata: bool,
+}
+
+impl Hash for Attribute {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state)
+    }
+}
+
+impl PartialEq<Self> for Attribute {
+    fn eq(&self, other: &Self) -> bool {
+        self.name.eq(&other.name)
+    }
+}
+
+impl Eq for Attribute {}
+
+fn metadata_default() -> bool {
+    return true;
+}
+
 #[derive(Debug)]
 pub(crate) enum AttributeOption {
     Audio {
         /// The path to the audio file to be used.
         file: PathBuf,
         /// The weighting for the option.
-        weight: Option<f32>,
+        weight: f64,
     },
     Color {
         color: Color,
         /// The weighting for the option.
-        weight: Option<f32>,
+        weight: f64,
     },
     Image {
         file: PathBuf,
         /// The weighting for the option.
-        weight: Option<f32>,
+        weight: f64,
     },
     Text {
         /// The path to the font to be used.
@@ -112,8 +132,34 @@ pub(crate) enum AttributeOption {
         /// The color of the text.
         color: Color,
         /// The weighting for the option.
-        weight: Option<f32>,
+        weight: f64,
     },
+    None {
+        /// The weighting for the option.
+        weight: f64,
+    },
+}
+
+impl AttributeOption {
+    pub(crate) fn path(&self) -> Option<&PathBuf> {
+        match self {
+            AttributeOption::Audio { file, .. } => Some(file),
+            AttributeOption::Color { .. } => None,
+            AttributeOption::Image { file, .. } => Some(file),
+            AttributeOption::Text { font, .. } => Some(font),
+            AttributeOption::None { .. } => None,
+        }
+    }
+
+    pub(crate) fn weight(&self) -> &f64 {
+        match self {
+            AttributeOption::Audio { weight, .. } => weight,
+            AttributeOption::Color { weight, .. } => weight,
+            AttributeOption::Image { weight, .. } => weight,
+            AttributeOption::Text { weight, .. } => weight,
+            AttributeOption::None { weight, .. } => weight,
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for AttributeOption {
@@ -192,11 +238,6 @@ impl<'de> Deserialize<'de> for AttributeOption {
                                 return Err(de::Error::duplicate_field("weight"));
                             }
                             let value = map.next_value()?;
-                            if value < 0.0 || value > 1.0 {
-                                return Err(de::Error::custom(format!(
-                                    "the weight of {value} is invalid - expected a value > 0 and <= 1"
-                                )));
-                            }
                             weight = Some(value);
                         }
                         _ => {}
@@ -208,6 +249,8 @@ impl<'de> Deserialize<'de> for AttributeOption {
                     let extension = file.extension().map(|e| e.to_ascii_lowercase());
                     return match extension.as_ref().and_then(|e| e.to_str()) {
                         Some(extension) => {
+                            let weight =
+                                weight.ok_or_else(|| de::Error::missing_field("weight"))?;
                             if SUPPORTED_AUDIO_EXTENSIONS.contains(&extension) {
                                 Ok(AttributeOption::Audio { file, weight })
                                 // Use supported extensions from underlying image library
@@ -227,6 +270,7 @@ impl<'de> Deserialize<'de> for AttributeOption {
                     let x = x.ok_or_else(|| de::Error::missing_field("x"))?;
                     let y = y.ok_or_else(|| de::Error::missing_field("y"))?;
                     let color = color.ok_or_else(|| de::Error::missing_field("color"))?;
+                    let weight = weight.ok_or_else(|| de::Error::missing_field("weight"))?;
                     return Ok(AttributeOption::Text {
                         font,
                         text,
@@ -237,7 +281,10 @@ impl<'de> Deserialize<'de> for AttributeOption {
                         weight,
                     });
                 } else if let Some(color) = color {
+                    let weight = weight.ok_or_else(|| de::Error::missing_field("weight"))?;
                     return Ok(AttributeOption::Color { color, weight });
+                } else if let Some(weight) = weight {
+                    return Ok(AttributeOption::None { weight });
                 }
 
                 Err(de::Error::custom("unable to determine attribute option"))

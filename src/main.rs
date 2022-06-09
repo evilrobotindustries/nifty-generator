@@ -3,7 +3,6 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-mod combinations;
 mod config;
 mod generation;
 mod metadata;

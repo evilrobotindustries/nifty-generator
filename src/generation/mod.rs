@@ -2,7 +2,7 @@ mod caches;
 
 use self::caches::Cache;
 use crate::config::{AttributeOption, Color};
-use crate::{combinations, metadata, Arguments, Config, PATH_TO_STRING_MSG};
+use crate::{metadata, Arguments, Config, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
 use ffmpeg_cli::{FfmpegBuilder, Parameter};
 use hhmmss::Hhmmss;
@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use thousands::Separable;
 
 const ID: &str = "id";
 
@@ -49,23 +48,17 @@ impl Generator {
         info!("starting nifty generation...");
         let current = Instant::now();
 
-        // Generate all combinations, select a random subset and then build token images and metadata
-        let combinations = combinations::combinations(&self.config);
-        let combinations_count = combinations.len();
-        let randomised = crate::random::random(combinations, self.config.supply);
-        info!(
-            "randomly selected {} items from {} combinations",
-            randomised.len().separate_with_commas(),
-            combinations_count.separate_with_commas()
-        );
+        // Generate the collection based on configuration
+        let attributes = crate::random::generate(&self.config)
+            .with_context(|| "failed to generate the collection")?;
 
         let mut audio_cache = caches::AudioCache::new();
         let mut image_cache = caches::ImageCache::new();
         let mut background_color_cache = caches::ColorCache::new();
 
-        for (token, attributes) in randomised.iter().enumerate() {
-            let token = token + 1;
-            info!("generating nifty #{}", token);
+        for item in 0..self.config.supply {
+            let token_id = item + self.config.start_token;
+            info!("generating nifty #{}", token_id);
 
             // Create a new image
             let mut token_image: Option<Rc<DynamicImage>> = None;
@@ -74,23 +67,21 @@ impl Generator {
             let mut token_color: Option<&Color> = None;
 
             // Process layers
-            for (layer, (attribute, value, option)) in attributes.iter().enumerate() {
+            for (layer, (attribute, options)) in attributes.iter().enumerate() {
+                let (value, option) = options[item];
                 debug!(
-                    "processing attribute '{attribute}' with value of '{value}' as layer {layer}",
+                    "processing attribute '{}' with value of '{value}' as layer {layer}",
+                    attribute.name
                 );
 
-                // Add attribute
-                token_attributes.push(metadata::Attribute::String {
-                    trait_type: attribute,
-                    value,
-                });
-
-                // Continue when no value
-                if let None = option {
-                    continue;
+                // Add attribute to resulting metadata (if applicable)
+                if attribute.metadata {
+                    token_attributes.push(metadata::Attribute::String {
+                        trait_type: &attribute.name,
+                        value,
+                    });
                 }
 
-                let option = option.as_ref().unwrap();
                 match option {
                     AttributeOption::Audio { file, .. } => {
                         // Save audio until the end of token generation
@@ -150,6 +141,7 @@ impl Generator {
                         color,
                         ..
                     } => {
+                        // todo: cache font
                         // Load font
                         let path = self
                             .source
@@ -164,13 +156,14 @@ impl Generator {
                         let font = Font::try_from_vec(buffer).unwrap();
 
                         // Initialise text
-                        let token_variables = HashMap::from([(ID.to_string(), token.to_string())]);
+                        let token_variables =
+                            HashMap::from([(ID.to_string(), token_id.to_string())]);
                         let text = strfmt::strfmt(&text, &token_variables).expect(
-                            "unable to name token {token} using the configured token external url format",
-                        );
+                                "unable to name token {token} using the configured token external url format",
+                            );
 
                         let image = token_image.expect(
-                            "an image is required before text can be written - check that the text layer is above some other image layer");
+                                "an image is required before text can be written - check that the text layer is above some other image layer");
 
                         let scale = Scale::uniform(*height);
                         let text_size = text_size(scale, &font, &text);
@@ -189,13 +182,14 @@ impl Generator {
                             &text,
                         ))));
                     }
+                    AttributeOption::None { .. } => {}
                 }
             }
 
             // Save token to output folder
             if let Some(token_image) = token_image {
                 // Save image
-                let image_path = self.save_image(token, token_image)?;
+                let image_path = self.save_image(token_id, token_image)?;
 
                 // Check if video to be generated
                 let video_path = if let Some(audio) = audio {
@@ -213,8 +207,14 @@ impl Generator {
                     .background_color
                     .as_ref()
                     .map(|color| color.hex.as_str()));
-                self.save_metadata(token, token_attributes, token_color, image_path, video_path)
-                    .with_context(|| "unable to save token metadata")?;
+                self.save_metadata(
+                    token_id,
+                    token_attributes,
+                    token_color,
+                    image_path,
+                    video_path,
+                )
+                .with_context(|| "unable to save token metadata")?;
             }
         }
 
