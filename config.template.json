@@ -8,20 +8,20 @@
   "_comment": "Attributes should be specified in layered order: i.e. layer 0 of the image as the bottom/last attribute.",
   "attributes": [
     {
-      "_comment": "Audio files (aac, flac, m4a, mp3, wav) are combined with images to create video. Lower weight increases rarity and when not specified, defaults to 1.",
+      "_comment": "Audio files (aac, flac, m4a, mp3, wav) are combined with images to create video. Lower weight increases rarity and when not specified, defaults to 1 when not specified and will be ignored if set to zero.",
       "name": "Audio",
       "options": {
         "Sound 1": {
           "file": "audio samples/sound 1.m4a",
-          "weight": 1
+          "weight": 1.0
         },
         "Sound 2": {
           "file": "audio samples/sound_2.wav",
-          "weight": 2
+          "weight": 2.0
         },
         "None": {
           "_comment": "A none/empty option can be added by specifying a weight value only.",
-          "weight": 3
+          "weight": 3.0
         }
       }
     },
