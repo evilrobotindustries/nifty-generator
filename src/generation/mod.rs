@@ -1,233 +1,304 @@
 mod caches;
 
 use self::caches::Cache;
-use crate::config::{AttributeOption, Color};
-use crate::{metadata, Arguments, Config, PATH_TO_STRING_MSG};
+use crate::config::{Attribute, AttributeOption, Color};
+use crate::generation::caches::{AudioCache, ColorCache, FontCache, ImageCache};
+use crate::random::AttributeValue;
+use crate::{metadata, Config, PATH_TO_STRING_MSG};
 use anyhow::{Context, Result};
 use ffmpeg_cli::{FfmpegBuilder, Parameter};
 use hhmmss::Hhmmss;
 use image::{imageops, DynamicImage};
 use imageproc::drawing::{draw_text, text_size};
 use log::{debug, error, info, trace};
-use rusttype::{Font, Scale};
+use rusttype::Scale;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 const ID: &str = "id";
 
-pub(crate) async fn generate(args: Arguments, config: Config) -> Result<()> {
-    Generator::new(args, config).start().await
+pub(crate) async fn generate(
+    source: &PathBuf,
+    output: &str,
+    media: &str,
+    metadata: &str,
+    config: Config,
+) -> Result<()> {
+    // Validate the config before starting generation
+    validate(&config)?;
+
+    // Initialise generator and start
+    Generator::new(source, output, media, metadata, &config)
+        .start(&config)
+        .await
 }
 
-struct Generator {
+pub(crate) fn validate(config: &Config) -> Result<()> {
+    // Check if any audio configured
+    if !config.attributes.iter().any(|a| {
+        a.options
+            .values()
+            .any(|o| matches!(o, AttributeOption::Audio { .. }))
+    }) {
+        return Ok(());
+    }
+
+    // Ensure ffmpeg exists
+    trace!("checking for ffmpeg...");
+    if let Err(e) = std::process::Command::new("ffmpeg")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        if let std::io::ErrorKind::NotFound = e.kind() {
+            return Err(e).with_context(|| "'ffmpeg' was not found - check your PATH");
+        }
+        return Err(e).with_context(|| "could not run 'ffmpeg'");
+    }
+
+    Ok(())
+}
+
+struct Generator<'a> {
     source: PathBuf,
     media: PathBuf,
     metadata: PathBuf,
-    config: Config,
+    name: &'a str,
+    description: &'a str,
+    external_url: Option<&'a String>,
+    background_color: Option<&'a Color>,
+    start_token: usize,
+    caches: Caches<'a>,
 }
 
-impl Generator {
-    fn new(args: Arguments, config: Config) -> Self {
-        let source = args.source;
-        let media = source.join(&args.output).join(&args.media);
-        let metadata = source.join(&args.output).join(&args.metadata);
+struct Caches<'a> {
+    audio: AudioCache,
+    color: ColorCache,
+    font: FontCache<'a>,
+    image: ImageCache,
+}
+
+impl<'a> Generator<'a> {
+    fn new(
+        source: &PathBuf,
+        output: &str,
+        media: &str,
+        metadata: &str,
+        config: &'a Config,
+    ) -> Self {
+        let media = source.join(output).join(media);
+        let metadata = source.join(output).join(metadata);
         Self {
-            source,
+            source: source.clone(),
             media,
             metadata,
-            config,
+            name: config.name.as_ref(),
+            description: config.description.as_ref(),
+            external_url: config.external_url.as_ref(),
+            background_color: config.background_color.as_ref(),
+            start_token: config.start_token,
+            caches: Caches {
+                audio: AudioCache::new(),
+                color: ColorCache::new(),
+                font: FontCache::new(),
+                image: ImageCache::new(),
+            },
         }
     }
 
-    async fn start(&mut self) -> Result<()> {
+    async fn start(&mut self, config: &Config) -> Result<()> {
+        // Generate the collection based on configuration
         info!("starting nifty generation...");
         let current = Instant::now();
-
-        // Generate the collection based on configuration
-        let attributes = crate::random::generate(&self.config)
-            .with_context(|| "failed to generate the collection")?;
-
-        let mut audio_cache = caches::AudioCache::new();
-        let mut image_cache = caches::ImageCache::new();
-        let mut background_color_cache = caches::ColorCache::new();
-
-        for item in 0..self.config.supply {
-            let token_id = item + self.config.start_token;
-            info!("generating nifty #{}", token_id);
-
-            // Create a new image
-            let mut token_image: Option<Rc<DynamicImage>> = None;
-            let mut token_attributes = Vec::<metadata::Attribute>::with_capacity(attributes.len());
-            let mut audio: Option<PathBuf> = None;
-            let mut token_color: Option<&Color> = None;
-
-            // Process layers
-            for (layer, (attribute, options)) in attributes.iter().enumerate() {
-                let (value, option) = options[item];
-                debug!(
-                    "processing attribute '{}' with value of '{value}' as layer {layer}",
-                    attribute.name
-                );
-
-                // Add attribute to resulting metadata (if applicable)
-                if attribute.metadata {
-                    token_attributes.push(metadata::Attribute::String {
-                        trait_type: &attribute.name,
-                        value,
-                    });
-                }
-
-                match option {
-                    AttributeOption::Audio { file, .. } => {
-                        // Save audio until the end of token generation
-                        audio = Some(file.clone());
-                        continue;
-                    }
-                    AttributeOption::Color { color, .. } => {
-                        // Store color for later use (i.e. first image layer to determine width/height)
-                        if token_color.is_none() {
-                            token_color = Some(color);
-                        }
-                    }
-                    AttributeOption::Image { file, .. } => {
-                        // Get image and cache for subsequent use
-                        let path = self
-                            .source
-                            .join(file)
-                            .into_os_string()
-                            .into_string()
-                            .expect(PATH_TO_STRING_MSG);
-                        let layer_image = image_cache.get(&path)?;
-
-                        // Set token image if first layer
-                        if token_image.is_none() {
-                            // Check if we should apply a background color as first layer
-                            if let Some(color) = token_color {
-                                token_image = Some(Rc::new(
-                                    background_color_cache
-                                        .get_color(
-                                            color,
-                                            layer_image.width(),
-                                            layer_image.height(),
-                                        )?
-                                        .clone(),
-                                ));
-                            } else {
-                                token_image = Some(Rc::new(layer_image.clone()));
-                                continue;
-                            }
-                        }
-
-                        // Add layer to image
-                        let token_image = Rc::get_mut(
-                            token_image
-                                .as_mut()
-                                .expect("expected an existing token image"),
-                        )
-                        .expect("expected an existing image");
-                        imageops::overlay(token_image, layer_image, 0, 0);
-                    }
-                    AttributeOption::Text {
-                        font,
-                        text,
-                        height,
-                        x,
-                        y,
-                        color,
-                        ..
-                    } => {
-                        // todo: cache font
-                        // Load font
-                        let path = self
-                            .source
-                            .join(font)
-                            .into_os_string()
-                            .into_string()
-                            .expect(PATH_TO_STRING_MSG);
-                        let file = std::fs::File::open(&path).expect("could not open font file");
-                        let mut reader = std::io::BufReader::new(file);
-                        let mut buffer = Vec::new();
-                        reader.read_to_end(&mut buffer)?;
-                        let font = Font::try_from_vec(buffer).unwrap();
-
-                        // Initialise text
-                        let token_variables =
-                            HashMap::from([(ID.to_string(), token_id.to_string())]);
-                        let text = strfmt::strfmt(&text, &token_variables).expect(
-                                "unable to name token {token} using the configured token external url format",
-                            );
-
-                        let image = token_image.expect(
-                                "an image is required before text can be written - check that the text layer is above some other image layer");
-
-                        let scale = Scale::uniform(*height);
-                        let text_size = text_size(scale, &font, &text);
-                        let x = if *x < 0 {
-                            (image.as_ref().width() as i32 + *x) - text_size.0
-                        } else {
-                            *x
-                        };
-                        token_image = Some(Rc::new(DynamicImage::ImageRgba8(draw_text(
-                            image.as_ref(),
-                            color.rgba,
-                            x,
-                            *y,
-                            scale,
-                            &font,
-                            &text,
-                        ))));
-                    }
-                    AttributeOption::None { .. } => {}
-                }
-            }
-
-            // Save token to output folder
-            if let Some(token_image) = token_image {
-                // Save image
-                let image_path = self.save_image(token_id, token_image)?;
-
-                // Check if video to be generated
-                let video_path = if let Some(audio) = audio {
-                    Some(
-                        self.generate_video(&image_path, &audio, &mut audio_cache)
-                            .await?,
-                    )
-                } else {
-                    None
-                };
-
-                // Finally save metadata
-                let token_color = token_color.map(|color| color.hex.as_str()).or(self
-                    .config
-                    .background_color
-                    .as_ref()
-                    .map(|color| color.hex.as_str()));
-                self.save_metadata(
-                    token_id,
-                    token_attributes,
-                    token_color,
-                    image_path,
-                    video_path,
-                )
-                .with_context(|| "unable to save token metadata")?;
-            }
+        for (i, attributes) in crate::random::generate(&config)
+            .with_context(|| "failed to generate the collection")?
+            .iter()
+            .enumerate()
+        {
+            self.generate_token(i + self.start_token, attributes)
+                .await?;
         }
 
         info!("generation completed in {}", current.elapsed().hhmmssxxx());
         Ok(())
     }
 
-    async fn generate_video(
-        &self,
-        image_path: &PathBuf,
-        audio: &PathBuf,
-        cache: &mut caches::AudioCache,
-    ) -> Result<PathBuf> {
+    async fn generate_token(
+        &mut self,
+        token: usize,
+        attributes: &Vec<(&Attribute, &AttributeValue, &AttributeOption)>,
+    ) -> Result<()> {
+        info!("generating nifty #{}", token);
+
+        // Create a new image
+        let mut token_attributes = Vec::new();
+        let mut token_audio: Option<PathBuf> = None;
+        let mut token_color: Option<&Color> = None;
+        let mut token_image: Option<DynamicImage> = None;
+
+        // Process layers
+        for (layer, (attribute, value, option)) in attributes.iter().enumerate() {
+            debug!(
+                "processing attribute '{}' with value of '{value}' as layer {layer}",
+                attribute.name
+            );
+
+            // Add attribute to resulting metadata (if applicable)
+            if attribute.metadata {
+                token_attributes.push(metadata::Attribute::String {
+                    trait_type: &attribute.name,
+                    value,
+                });
+            }
+
+            match option {
+                AttributeOption::Audio { file, .. } => {
+                    // Save audio until the end of token generation
+                    token_audio = Some(file.clone());
+                    continue;
+                }
+                AttributeOption::Color { color, .. } => {
+                    // Store color for later use (i.e. first image layer to determine width/height)
+                    if token_color.is_none() {
+                        token_color = Some(&color);
+                    }
+                }
+                AttributeOption::Image { file, .. } => {
+                    token_image =
+                        Some(self.generate_image_layer(file, token_image, token_color)?);
+                }
+                AttributeOption::Text {
+                    font,
+                    text,
+                    height,
+                    x,
+                    y,
+                    color,
+                    ..
+                } => {
+                    token_image = Some(self.generate_text(
+                        token,
+                        &mut token_image,
+                        font,
+                        &text,
+                        height,
+                        x,
+                        y,
+                        color,
+                    )?);
+                }
+                AttributeOption::None { .. } => {}
+            }
+        }
+
+        // Save token to output folder
+        if let Some(token_image) = token_image {
+            // Save image
+            let image_path = self.save_image(token, token_image)?;
+
+            // Check if video to be generated
+            let video_path = if let Some(audio) = token_audio {
+                Some(self.generate_video(&image_path, &audio).await?)
+            } else {
+                None
+            };
+
+            // Finally save metadata
+            let token_color = token_color.map(|color| color.hex.as_str()).or(self
+                .background_color
+                .as_ref()
+                .map(|color| color.hex.as_str()));
+            self.save_metadata(token, token_attributes, token_color, image_path, video_path)
+                .with_context(|| "unable to save token metadata")?;
+        }
+
+        Ok(())
+    }
+
+    fn generate_image_layer(
+        &mut self,
+        file: &PathBuf,
+        mut token_image: Option<DynamicImage>,
+        token_color: Option<&Color>,
+    ) -> Result<DynamicImage> {
+        // Get image and cache for subsequent use
+        let path = self
+            .source
+            .join(file)
+            .into_os_string()
+            .into_string()
+            .expect(PATH_TO_STRING_MSG);
+        let layer_image = self.caches.image.get(&path)?;
+
+        // If no existing image/color, just return the image
+        if token_image.is_none() {
+            match token_color {
+                // Just return image as first layer
+                None => return Ok(layer_image.clone()),
+                // Apply a background color as first/bottom layer
+                Some(color) => {
+                    token_image = Some(
+                        self.caches
+                            .color
+                            .get_color(color, layer_image.width(), layer_image.height())?
+                            .clone(),
+                    );
+                }
+            }
+        }
+
+        // Add layer to image
+        let mut token_image = token_image.expect("expected an existing token image");
+        imageops::overlay(&mut token_image, layer_image, 0, 0);
+        Ok(token_image)
+    }
+
+    fn generate_text(
+        &mut self,
+        token_id: usize,
+        token_image: &mut Option<DynamicImage>,
+        font: &PathBuf,
+        text: &&String,
+        height: &f32,
+        x: &i32,
+        y: &i32,
+        color: &Color,
+    ) -> Result<DynamicImage> {
+        // Load font
+        let path = self
+            .source
+            .join(font)
+            .into_os_string()
+            .into_string()
+            .expect(PATH_TO_STRING_MSG);
+        let font = self.caches.font.get(&path)?;
+
+        // Initialise text
+        let token_variables = HashMap::from([(ID.to_string(), token_id.to_string())]);
+        let text = strfmt::strfmt(&text, &token_variables)
+            .expect("unable to name token {token} using the configured token external url format");
+
+        let image = token_image.as_ref().expect(
+            "an image is required before text can be written - check that the text layer is above some other image layer");
+
+        let scale = Scale::uniform(*height);
+        let text_size = text_size(scale, &font, &text);
+        let x = if *x < 0 {
+            (image.width() as i32 + x) - text_size.0
+        } else {
+            *x
+        };
+        Ok(DynamicImage::ImageRgba8(draw_text(
+            image, color.rgba, x, *y, scale, &font, &text,
+        )))
+    }
+
+    async fn generate_video(&mut self, image_path: &PathBuf, audio: &PathBuf) -> Result<PathBuf> {
+        // Determine precise audio duration
         let audio_path = self
             .source
             .join(audio)
@@ -239,7 +310,12 @@ impl Generator {
             if extension == "m4a" {
                 trace!("determining audio track duration for precise output...");
                 // Read file to determine audio length
-                audio_duration = Some(cache.get(&audio_path).expect("could not get cached audio"));
+                audio_duration = Some(
+                    self.caches
+                        .audio
+                        .get(&audio_path)
+                        .expect("could not get cached audio"),
+                );
                 trace!(
                     "audio track duration is {}",
                     audio_duration.unwrap().hhmmssxxx()
@@ -247,41 +323,31 @@ impl Generator {
             }
         }
 
-        // "ffmpeg -loop 1 -i 0.png -i 0.m4a -c:v libx264 -c:a aac -pix_fmt yuv420p -t 6098ms -y out.mp4"
+        // Build ffmpeg command
         let mut video_path = image_path.clone();
         video_path.set_extension("mp4");
         let audio_duration =
             audio_duration.map_or("".to_string(), |d| format!("{}ms", d.as_millis()));
-        let output_path = &video_path
-            .clone()
-            .into_os_string()
-            .into_string()
-            .expect(PATH_TO_STRING_MSG);
-        let mut output = ffmpeg_cli::File::new(&output_path)
+        let mut output = ffmpeg_cli::File::new(&video_path.to_str().expect(PATH_TO_STRING_MSG))
             .option(Parameter::KeyValue("acodec", "aac"))
             .option(Parameter::KeyValue("vcodec", "libx264"))
             .option(Parameter::KeyValue("pix_fmt", "yuv420p")); // Required for compatibility
         if audio_duration != "" {
             output = output.option(Parameter::KeyValue("t", &audio_duration));
         }
-
-        let image_path = image_path
-            .clone()
-            .into_os_string()
-            .into_string()
-            .expect(PATH_TO_STRING_MSG);
         let builder = FfmpegBuilder::new()
             .stderr(Stdio::piped())
             .option(Parameter::Single("nostdin"))
             .option(Parameter::KeyValue("loop", "1"))
             .input(
-                ffmpeg_cli::File::new(&image_path)
+                ffmpeg_cli::File::new(&image_path.to_str().expect(PATH_TO_STRING_MSG))
                     .option(Parameter::KeyValue("framerate", "1")) // Single image so only single frame
                     .option(Parameter::KeyValue("colorspace", "bt709")), // Preserve colors as best as possible
             )
             .input(ffmpeg_cli::File::new(&audio_path))
             .output(output);
 
+        // Run ffmpeg command
         let current = Instant::now();
         trace!("generating video from image and audio...");
         let ffmpeg = builder.run().await.expect("unable to run ffmpeg");
@@ -292,25 +358,17 @@ impl Generator {
 
         trace!(
             "successfully generated {} in {}",
-            video_path
-                .clone()
-                .into_os_string()
-                .into_string()
-                .expect(PATH_TO_STRING_MSG),
+            video_path.to_str().expect(PATH_TO_STRING_MSG),
             current.elapsed().hhmmssxxx()
         );
         Ok(video_path)
     }
 
-    fn save_image(&self, token: usize, token_image: Rc<DynamicImage>) -> Result<PathBuf> {
+    fn save_image(&self, token: usize, token_image: DynamicImage) -> Result<PathBuf> {
         let image_name = format!("{token}.png");
         let image_path = self.media.join(&image_name);
         {
-            let image_path = image_path
-                .clone()
-                .into_os_string()
-                .into_string()
-                .expect(PATH_TO_STRING_MSG);
+            let image_path = image_path.to_str().expect(PATH_TO_STRING_MSG);
             debug!("saving token {token} media as '{image_path}'");
             if let Err(e) = token_image.save(&image_path) {
                 error!("error saving {image_path}: {e}")
@@ -355,12 +413,12 @@ impl Generator {
         let token_variables = HashMap::from([(ID.to_string(), token.to_string())]);
         let token_metadata = metadata::Metadata {
             id: token,
-            name: strfmt::strfmt(&self.config.name, &token_variables).with_context(|| {
+            name: strfmt::strfmt(&self.name, &token_variables).with_context(|| {
                 "unable to name token {token} using the configured token name format"
             })?,
-            description: &self.config.description,
+            description: &self.description,
             image,
-            external_url: self.config.external_url.as_ref().map(|url| {
+            external_url: self.external_url.as_ref().map(|url| {
                 strfmt::strfmt(&url, &token_variables).expect(
                     "unable to name token {token} using the configured token external url format",
                 )

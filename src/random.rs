@@ -10,7 +10,7 @@ pub(crate) type AttributeValue = str;
 
 pub(crate) fn generate(
     config: &Config,
-) -> Result<IndexMap<&Attribute, Vec<(&AttributeValue, &AttributeOption)>>> {
+) -> Result<Vec<Vec<(&Attribute, &AttributeValue, &AttributeOption)>>> {
     debug!(
         "randomly generating {} items of each attribute, using the weights specified in config...",
         config.supply.separate_with_commas(),
@@ -70,9 +70,16 @@ pub(crate) fn generate(
 
         results.insert(&attribute, generated);
     }
+    let results = (0..config.supply).fold(Vec::with_capacity(config.supply), |mut v, i| {
+        let attributes: Vec<(&Attribute, &AttributeValue, &AttributeOption)> = results
+            .iter()
+            .map(|(attribute, options)| (*attribute, options[i].0, options[i].1))
+            .collect();
+        v.push(attributes);
+        v
+    });
 
     debug!("generation complete, outputting attribute stats...");
-
     for (attribute, mut stats) in stats.into_iter().rev() {
         stats.sort_by(|k, _, k2, _| k.cmp(k2));
 
@@ -90,7 +97,6 @@ pub(crate) fn generate(
                 .join(", ")
         );
     }
-
     // todo: include stats on duplicates
 
     Ok(results)

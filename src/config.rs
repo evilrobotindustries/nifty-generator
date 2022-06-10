@@ -1,4 +1,4 @@
-use crate::{Arguments, PATH_TO_STRING_MSG};
+use crate::PATH_TO_STRING_MSG;
 use anyhow::{Context, Result};
 use image::{ImageFormat, Rgba};
 use indexmap::IndexMap;
@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 const SUPPORTED_AUDIO_EXTENSIONS: [&str; 5] = ["aac", "flac", "m4a", "mp3", "wav"];
 const DEFAULT_WEIGHT: f64 = 1.0;
 
-pub(crate) fn load(args: &Arguments) -> Result<Config> {
-    let config = args.source.join(&args.config);
+pub(crate) fn load(source: &PathBuf, config: &str) -> Result<Config> {
+    let config = source.join(config);
     let config_path = &config.to_str().expect(PATH_TO_STRING_MSG);
     debug!("loading configuration from '{config_path}'");
     let file = OpenOptions::new()
@@ -31,7 +31,7 @@ pub(crate) fn load(args: &Arguments) -> Result<Config> {
     config.attributes.reverse();
 
     // Validate all configured paths exist and return config if successful
-    config.validate(&args.source)?;
+    config.validate(&source)?;
     Ok(config)
 }
 

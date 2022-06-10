@@ -25,4 +25,5 @@ strfmt = "0.1.6"
 structopt = "0.3.26"
 tokio = "1.19.1"
 thousands = "0.2.0"
+url = "2.2.2"
 

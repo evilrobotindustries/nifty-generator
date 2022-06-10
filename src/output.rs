@@ -1,20 +1,20 @@
-use crate::{Arguments, PATH_TO_STRING_MSG};
+use crate::PATH_TO_STRING_MSG;
 use anyhow::{Context, Result};
 use log::{debug, trace, warn};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn init(args: &Arguments) -> Result<PathBuf> {
+pub(crate) fn init(source: &PathBuf, output: &str, media: &str, metadata: &str) -> Result<PathBuf> {
     debug!("checking output directories...");
-    let output_path = init_output(&args)?;
-    init_media(&args, &output_path)?;
-    init_metadata(&args, &output_path)?;
+    let output_path = init_output(source, output)?;
+    init_media(&output_path, media)?;
+    init_metadata(&output_path, metadata)?;
     Ok(output_path)
 }
 
-fn init_media(args: &Arguments, output: &PathBuf) -> Result<()> {
+fn init_media(output: &PathBuf, media: &str) -> Result<()> {
     let media_path = output
-        .join(&args.media)
+        .join(media)
         .into_os_string()
         .into_string()
         .expect(PATH_TO_STRING_MSG);
@@ -27,9 +27,9 @@ fn init_media(args: &Arguments, output: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn init_metadata(args: &Arguments, output: &PathBuf) -> Result<()> {
+fn init_metadata(output: &PathBuf, metadata: &str) -> Result<()> {
     let metadata_path = output
-        .join(&args.metadata)
+        .join(metadata)
         .into_os_string()
         .into_string()
         .expect(PATH_TO_STRING_MSG);
@@ -43,8 +43,8 @@ fn init_metadata(args: &Arguments, output: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn init_output(args: &Arguments) -> Result<PathBuf> {
-    let output = args.source.join(&args.output);
+fn init_output(source: &PathBuf, output: &str) -> Result<PathBuf> {
+    let output = source.join(output);
     let output_path = &output.to_str().expect(PATH_TO_STRING_MSG);
     trace!("checking output directory '{output_path}' exists...");
 
