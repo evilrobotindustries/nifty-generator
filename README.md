@@ -17,7 +17,7 @@ A full listing of all available options can be found using:
     ng generate --help
 
 ##  Exploration
-Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.industries) to explore the generated collection within a browser. This will require two steps:
+Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.industries) to explore the generated collection within a browser. This will require three steps:
 
 #### Step 1
 Serve the local metadata/media output with a local web server such as [Static Web Server](https://sws.joseluisq.net), sample command as below. The `--root` option should specify the `output` folder where the content was generated. 
@@ -27,6 +27,9 @@ Serve the local metadata/media output with a local web server such as [Static We
 You will then be able to browse your content via http://localhost:8787, assuming you used the same port as above. More information at https://sws.joseluisq.net/configuration/command-line-arguments/
 
 #### Step 2
+Find an extension for your browser which enables CORS for every request and ensure that it is enabled.
+
+#### Step 3
 Enter the URL to the metadata of the first token (e.g. http://localhost:8787/metadata/1) into the input box and then browse through the collection.
 
 ## Deployment
