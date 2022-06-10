@@ -15,6 +15,79 @@ Basic usage:
 A full listing of all available options can be found using:
 
     ng generate --help
+    
+### Configuration
+
+The `config.json` structure has the following fields:
+
+| Name | Type | Optional | Description |
+| ---- | ---- | -------- | ----------- |
+| name | `String` | No | A name for the token, including {id} which will be replaced by the token number. |
+| description | `String` | No | A description of the token/project. |
+| background_color | `String` | Yes | A optional background color in rgba hex format (e.g. #112233 or #112233FF). |
+| external_url | `String` | Yes | An optional url for the token, including {id} which will be replaced by the token number. |
+| supply | `Number` | No | The total number of tokens to be generated. |
+| start_token | `Number` | No | The number of the first token. |
+| attributes | `Array` | No | An array of attributes, which should be specified in layered order: i.e. layer 0 of the image as the bottom/last attribute. |
+
+#### Attribute
+
+An attribute has the following fields:
+
+| Name | Type | Optional | Description |
+| ---- | ---- | -------- | ----------- |
+| name | `String` | No | The name of the attribute, as it should appear in the resulting token metadata. |
+| metadata | `Boolean` | Yes | Whether the attribute should be included in the resulting token metadata (default is `true`). |
+| options | `Map` | No | The possible values for the attribute. |
+
+#### Attribute Option
+
+Finally, an attribute option can be of the following types:
+
+##### Audio
+Audio files (aac, flac, m4a, mp3, wav) are combined with images to create video.
+
+| Name | Type | Optional | Description |
+| ---- | ---- | -------- | ----------- |
+| file | `String` | No | The path to the audio file to be used. Supported types are .aac, .flac, .m4a, .mp3, .wav. |
+| weight | `Number` | Yes | The weight which determines how frequently the options is included during generation. A smaller weight value increases rarity and when not specified, defaults to 1 and will be ignored if set to zero. |
+
+##### Color
+A layer can simply be filled with a color (in rgba hex).
+
+| Name | Type | Optional | Description |
+| ---- | ---- | -------- | ----------- |
+| color | `String` | No | A color in rgba hex format (e.g. #112233 or #112233FF). |
+| weight | `Number` | Yes | As above. |
+
+##### Image
+Images can be combined in layers to produce a final generated image.
+
+| Name | Type | Optional | Description |
+| ---- | ---- | -------- | ----------- |
+| file | `String` | No | The path to the image file to be used. Supported types are .avif, .jpg, .jpeg, .png, .gif, .webp, .tif, .tiff, .tga, .dds, .bmp, .ico, .hdr, .exr, .pbm, .pam, .ppm, .pgm, .ff, farbfeld)  |
+| weight | `Number` | Yes | As above. |
+
+##### None
+A none/empty option can be added by specifying a weight value only.
+
+| Name | Type | Optional | Description |
+| ---- | ---- | -------- | ----------- |
+| weight | `Number` | No | As above. |
+
+##### Text
+Text can be written to the image using the specified font, color, pixel height and co-ordinates. 
+
+| Name | Type | Optional | Description |
+| ---- | ---- | -------- | ----------- |
+| font | `String` | No | The path to the font file to be used. |
+| text | `String` | No | The text to be included. Any use of {id} will be replaced by the token number. |
+| height | `Number` | No | The height of the text, in pixels. |
+| x | `Number` | No | The x co-ordinate of where the text should start (in pixels). Use a negative value to right-align the text. |
+| y | `Number` | No | The y co-ordinate of where the text should start (in pixels). |
+| color | `String` | No | The color of the text in rgba hex format (e.g. #112233 or #112233FF). |
+| weight | `Number` | Yes | As above. |
+
 
 ##  Exploration
 Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.industries) to explore the generated collection within a browser. This will require two steps:
