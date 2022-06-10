@@ -22,7 +22,8 @@ Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.indus
 #### Step 1
 Serve the local metadata/media output with a local web server such as [Static Web Server](https://sws.joseluisq.net), sample command as below. The `--root` option should specify the `output` folder where the content was generated. 
 
-    static-web-server --log-level debug --cache-control-headers false --directory-listing true --cors-allow-origins --root /path/to/output --port 8787
+    static-web-server --log-level debug --cache-control-headers false --directory-listing true --cors-allow-origins "*" --root ./output --port 8787
+
 
 You will then be able to browse your content via http://localhost:8787, assuming you used the same port as above. More information at https://sws.joseluisq.net/configuration/command-line-arguments/
 
