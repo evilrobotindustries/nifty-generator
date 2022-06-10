@@ -1,12 +1,12 @@
 # Nifty Generator
 
-Nifty Generator (`ng`) is a command line tool for generating NFT images/video/metadata based on a json configuration file. It works by randomly selecting attribute options and layering them to generate images and video.
+Nifty Generator (`ng`) is a command line tool for randomly generating images/video/metadata based on a configuration file.
 
 NOTE: this is still pre-release and as such, things are subject to change. 
 
 ## Generation
    
-The `generate` command will expect to find a `config.json` in the specified source directory, which configures how the various media elements are to be combined (along with corresponding metadata attribute values). A sample configuration file can be found at `config.template.json` in the source code above. The resulting output will be generated within the `output` subdirectory by default.
+The `generate` command will expect to find a `config.json` in the specified source directory, which configures how the various atributes/media elements are to be combined. A sample configuration file can be found at `config.template.json` in the source code above. The resulting output will be generated within the `output` subdirectory by default.
 
 Basic usage:
     
@@ -17,7 +17,7 @@ A full listing of all available options can be found using:
     ng generate --help
 
 ##  Exploration
-Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.industries) to explore your generated collection. This will require two steps:
+Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.industries) to explore the generated collection within a browser. This will require two steps:
 
 #### Step 1
 Serve the local metadata/media output with a local web server such as [Static Web Server](https://sws.joseluisq.net), sample command as below. The `--root` option should specify the `output` folder where the content was generated. 
