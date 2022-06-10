@@ -386,13 +386,13 @@ impl<'a> Generator<'a> {
         image_path: PathBuf,
         video_path: Option<PathBuf>,
     ) -> Result<()> {
-        // Generate relative media paths
+        // Generate media paths relative to output folder
         let media = self
             .media
             .components()
             .last()
             .expect("could not get last component from path");
-        let media_path = Path::new(&media);
+        let media_path = Path::new("/").join(&media);
         let image_name = image_path
             .file_name()
             .expect("could not get image file name");
