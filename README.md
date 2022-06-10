@@ -6,7 +6,7 @@ NOTE: this is still pre-release and as such, things are subject to change.
 
 ## Generation
    
-The `generate` command will expect to find a `config.json` in the specified source directory, which configures how the various atributes/media elements are to be combined. A sample configuration file can be found at `config.template.json` in the source code above. The resulting output will be generated within the `output` subdirectory by default.
+The `generate` command will expect to find a `config.json` in the specified source directory, which configures how the various atributes/media elements are to be combined. The resulting output will be generated within the `output` subdirectory by default.
 
 Basic usage:
     
@@ -18,7 +18,7 @@ A full listing of all available options can be found using:
     
 ### Configuration
 
-The `config.json` structure has the following fields:
+The `config.json` structure has the below fields. A sample configuration file can be found at `config.template.json` in the source code above:
 
 | Name | Type | Optional | Description |
 | ---- | ---- | -------- | ----------- |
