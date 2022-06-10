@@ -1,8 +1,8 @@
 # Nifty Generator
 
-Nifty Generator (ng) is a command line tool for generating NFT images/video/metadata based on a json configuration file. It works by randomly selecting attribute options and layering them to generate images. Video files are generated if audio files are included.
+Nifty Generator (`ng`) is a command line tool for generating NFT images/video/metadata based on a json configuration file. It works by randomly selecting attribute options and layering them to generate images and video.
 
-NOTE: this is still pre-release and as such, things such as config file structure are still subject to change. 
+NOTE: this is still pre-release and as such, things are subject to change. 
 
 ## Generation
    
@@ -31,7 +31,7 @@ Enter the URL to the metadata of the first token (e.g. http://localhost:8787/met
 
 ## Deployment
 
-The `deploy` command allows you to update the generated metadata to point to wherever the media files are hosted. Simply provide the base uri value as a command line option.
+The `deploy` command allows you to update the generated metadata to point to wherever the media files are hosted. Simply provide the `base-uri` as a command line option.
 
 Basic usage:
     
