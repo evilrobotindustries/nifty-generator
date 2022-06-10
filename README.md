@@ -1,20 +1,20 @@
 # Nifty Generator
 
-Nifty Generator (ng) is a command line tool for generating NFT images/video/metadata based on json configuration file. It works by randomly selecting attribute options and layering them to generate images. Video files can optionally be created if audio files are configured.
+Nifty Generator (ng) is a command line tool for generating NFT images/video/metadata based on a json configuration file. It works by randomly selecting attribute options and layering them to generate images. Video files are generated if audio files are included.
 
 NOTE: this is still pre-release and as such, things such as config file structure are still subject to change. 
 
 ## Generation
+   
+The `generate` command will expect to find a `config.json` in the specified source directory, which configures how the various media elements are to be combined (along with corresponding metadata attribute values). A sample configuration file can be found at `config.template.json` in the source code above. The resulting output will be generated within the `output` subdirectory by default.
 
 Basic usage:
     
-    ng /path/to/source/directory
-    
-The tool will expect to find a `config.json` in the source directory, which configures how the various media elements are to be combined along with corresponding metadata attribute values. A sample configuration file can be found at `config.template.json` in the source code above. The resulting output will be generated within the `output` subdirectory.
+    ng generate /path/to/source/directory
 
 A full listing of all available options can be found using:
 
-    ng --help
+    ng generate --help
 
 ##  Exploration
 Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.industries) to explore your generated collection. This will require two steps:
@@ -28,3 +28,15 @@ You will then be able to browse your content via http://localhost:8787, assuming
 
 #### Step 2
 Enter the URL to the metadata of the first token (e.g. http://localhost:8787/metadata/1) into the input box and then browse through the collection.
+
+## Deployment
+
+The `deploy` command allows you to update the generated metadata to point to wherever the media files are hosted. Simply provide the base uri value as a command line option.
+
+Basic usage:
+    
+    ng deploy /path/to/source/directory --base-uri ipfs://SomEIpFSHash/ 
+    
+A full listing of all available options can be found using:
+
+    ng deploy --help
