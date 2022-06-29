@@ -2,7 +2,7 @@
 
 Nifty Generator (`ng`) is a command line tool for randomly generating images/video/metadata based on a configuration file.
 
-NOTE: this is still pre-release and as such, things are subject to change. 
+NOTE: this is still pre-release and as such, things are subject to change. You will also need to install [FFmpeg](https://ffmpeg.org) and ensure it is within your PATH if you want video generation.
 
 ## Generation
    
@@ -90,7 +90,7 @@ Text can be written to the image using the specified font, color, pixel height a
 
 
 ##  Exploration
-Once generated, you can use [Nifty Gallery](https://niftygallery.evilrobot.industries) to explore the generated collection within a browser. This will require two steps:
+Once generated, you can use [Nifty Gallery](https://github.com/evilrobotindustries/nifty-gallery) to explore the generated collection within a browser. This will require two steps:
 
 #### Step 1
 Serve the local metadata/media output with a local web server such as [Static Web Server](https://sws.joseluisq.net), sample command as below. The `--root` option should specify the `output` folder where the content was generated. 
